@@ -4,7 +4,7 @@
 - 通过 token 文本登录（API）
 - 初始化一个管理员用户
 - 管理员登录后台后新增/更新用户
-- 用户字段：名称、期限、token、权限（管理/查看/编辑）、创建时间、修改时间
+- 用户字段：名称、期限、token、权限（管理/查看/编辑）、域名范围、创建时间、修改时间
 
 ## 1. 安装与启动
 
@@ -75,6 +75,7 @@ AUTH_SECRET_KEY=replace-with-random
 - `expires_at` 期限（ISO 时间）
 - `token` 登录 token（唯一）
 - `permissions` 权限（`manage`, `view`, `edit`）
+- `domains` 域名范围（如 `echo.icehe.life,stat.icehe.life`，`*` 表示全部域名）
 - `created_at` 创建时间
 - `updated_at` 修改时间
 
@@ -82,3 +83,8 @@ AUTH_SECRET_KEY=replace-with-random
 - 拥有 `manage` 可进行后台管理和用户管理 API
 - `view` 用于只读接口
 - `edit` 预留给业务修改接口
+
+域名规则：
+- `domains` 使用英文逗号分隔多个域名
+- `*` 表示拥有所有域名下的权限
+- `POST /api/validate` 可额外传 `domain` 做域名范围校验

@@ -36,6 +36,7 @@ def init_db():
                 expires_at TEXT NOT NULL,
                 remark TEXT NOT NULL DEFAULT '',
                 permissions TEXT NOT NULL,
+                domains TEXT NOT NULL DEFAULT '*',
                 is_admin BOOLEAN NOT NULL DEFAULT FALSE,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
@@ -43,6 +44,7 @@ def init_db():
             """
         )
         db.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS remark TEXT NOT NULL DEFAULT ''")
+        db.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS domains TEXT NOT NULL DEFAULT '*'")
         db.commit()
     finally:
         db.close()
@@ -58,10 +60,10 @@ def ensure_admin_user():
         ts = now_iso()
         db.execute(
             """
-            INSERT INTO users (name, token, expires_at, remark, permissions, is_admin, created_at, updated_at)
-            VALUES (%s, %s, %s, %s, %s, TRUE, %s, %s)
+            INSERT INTO users (name, token, expires_at, remark, permissions, domains, is_admin, created_at, updated_at)
+            VALUES (%s, %s, %s, %s, %s, %s, TRUE, %s, %s)
             """,
-            (ADMIN_NAME, ADMIN_TOKEN, ADMIN_EXPIRES_AT, "", "manage,view,edit", ts, ts),
+            (ADMIN_NAME, ADMIN_TOKEN, ADMIN_EXPIRES_AT, "", "manage,view,edit", "*", ts, ts),
         )
         db.commit()
     finally:

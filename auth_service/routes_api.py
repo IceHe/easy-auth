@@ -1,14 +1,14 @@
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 import psycopg
 
 from .db import find_user_by_id, get_db, is_unique_violation
 from .decorators import get_current_user
 from .token_cache import get_or_load_user_by_token, invalidate_tokens
-from .users import has_permission, normalize_permissions, now_iso, now_utc, parse_iso, validate_admin_update
+from .users import has_domain_access, has_permission, normalize_domains, normalize_permissions, now_iso, now_utc, parse_iso, validate_admin_update
 
 
 api_router = APIRouter(prefix="/api", tags=["api"])
@@ -21,6 +21,7 @@ class LoginRequest(BaseModel):
 class ValidateTokenRequest(BaseModel):
     token: str
     permission: str | None = None
+    domain: str | None = None
 
 
 class UserPayload(BaseModel):
@@ -29,6 +30,7 @@ class UserPayload(BaseModel):
     expires_at: str
     remark: str = ""
     permissions: List[str]
+    domains: List[str] = Field(default_factory=lambda: ["*"])
 
 
 class UserUpdatePayload(BaseModel):
@@ -37,6 +39,7 @@ class UserUpdatePayload(BaseModel):
     expires_at: str
     remark: str = ""
     permissions: List[str]
+    domains: List[str] = Field(default_factory=lambda: ["*"])
 
 
 @api_router.post("/login")
@@ -58,25 +61,30 @@ def api_login(payload: LoginRequest, db=Depends(get_db)):
 def api_validate(payload: ValidateTokenRequest, db=Depends(get_db)):
     token = payload.token.strip()
     permission = (payload.permission or "").strip().lower()
+    domain = (payload.domain or "").strip()
     if not token:
-        return {"valid": False, "permissions": [], "reason": "token is required"}
+        return {"valid": False, "permissions": [], "domains": [], "reason": "token is required"}
 
     user = get_or_load_user_by_token(db, token)
     if not user:
-        return {"valid": False, "permissions": [], "reason": "invalid token"}
+        return {"valid": False, "permissions": [], "domains": [], "reason": "invalid token"}
     if parse_iso(user["expires_at"]) < now_utc():
-        return {"valid": False, "permissions": [], "reason": "token expired"}
+        return {"valid": False, "permissions": normalize_permissions(user["permissions"]), "domains": normalize_domains(user.get("domains") or "*"), "reason": "token expired"}
 
     permissions = normalize_permissions(user["permissions"])
+    domains = normalize_domains(user.get("domains") or "*")
     if permission and permission not in {"manage", "view", "edit"}:
-        return {"valid": False, "permissions": permissions, "reason": "invalid permission"}
+        return {"valid": False, "permissions": permissions, "domains": domains, "reason": "invalid permission"}
     if permission and not has_permission(user, permission):
-        return {"valid": False, "permissions": permissions, "reason": "forbidden"}
+        return {"valid": False, "permissions": permissions, "domains": domains, "reason": "forbidden"}
+    if domain and not has_domain_access(user, domain):
+        return {"valid": False, "permissions": permissions, "domains": domains, "reason": "forbidden domain"}
 
     return {
         "valid": True,
         "id": user["id"],
         "permissions": permissions,
+        "domains": domains,
     }
 
 
@@ -88,7 +96,7 @@ def api_me(current_user=Depends(get_current_user("view"))):
 @api_router.get("/users")
 def api_users_list(_current_user=Depends(get_current_user("manage")), db=Depends(get_db)):
     rows = db.execute(
-        "SELECT id, name, expires_at, remark, token, permissions, created_at, updated_at, is_admin FROM users ORDER BY id ASC"
+        "SELECT id, name, expires_at, remark, token, permissions, domains, created_at, updated_at, is_admin FROM users ORDER BY id ASC"
     ).fetchall()
     return [user_full(x) for x in rows]
 
@@ -100,9 +108,10 @@ def api_users_create(payload: UserPayload, _current_user=Depends(get_current_use
     expires_at = payload.expires_at.strip()
     remark = payload.remark.strip()
     permissions = normalize_permissions(payload.permissions)
+    domains = normalize_domains(payload.domains)
 
-    if not name or not token or not expires_at or not permissions:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="name/token/expires_at/permissions are required")
+    if not name or not token or not expires_at or not permissions or not domains:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="name/token/expires_at/permissions/domains are required")
     try:
         parse_iso(expires_at)
     except Exception as exc:
@@ -112,10 +121,10 @@ def api_users_create(payload: UserPayload, _current_user=Depends(get_current_use
     try:
         db.execute(
             """
-            INSERT INTO users (name, token, expires_at, remark, permissions, is_admin, created_at, updated_at)
-            VALUES (%s, %s, %s, %s, %s, FALSE, %s, %s)
+            INSERT INTO users (name, token, expires_at, remark, permissions, domains, is_admin, created_at, updated_at)
+            VALUES (%s, %s, %s, %s, %s, %s, FALSE, %s, %s)
             """,
-            (name, token, expires_at, remark, ",".join(permissions), ts, ts),
+            (name, token, expires_at, remark, ",".join(permissions), ",".join(domains), ts, ts),
         )
         db.commit()
         invalidate_tokens([token])
@@ -137,9 +146,10 @@ def api_users_update(user_id: int, payload: UserUpdatePayload, _current_user=Dep
     expires_at = payload.expires_at.strip()
     remark = payload.remark.strip()
     permissions = normalize_permissions(payload.permissions)
+    domains = normalize_domains(payload.domains)
 
-    if not name or not token or not expires_at or not permissions:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="name/token/expires_at/permissions are required")
+    if not name or not token or not expires_at or not permissions or not domains:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="name/token/expires_at/permissions/domains are required")
 
     try:
         parse_iso(expires_at)
@@ -152,10 +162,10 @@ def api_users_update(user_id: int, payload: UserUpdatePayload, _current_user=Dep
     try:
         db.execute(
             """
-            UPDATE users SET name = %s, token = %s, expires_at = %s, remark = %s, permissions = %s, updated_at = %s
+            UPDATE users SET name = %s, token = %s, expires_at = %s, remark = %s, permissions = %s, domains = %s, updated_at = %s
             WHERE id = %s
             """,
-            (name, token, expires_at, remark, ",".join(permissions), now_iso(), user_id),
+            (name, token, expires_at, remark, ",".join(permissions), ",".join(domains), now_iso(), user_id),
         )
         db.commit()
         invalidate_tokens([str(user["token"]), token])
@@ -187,6 +197,7 @@ def user_public(user):
         "expires_at": user["expires_at"],
         "remark": user["remark"],
         "permissions": normalize_permissions(user["permissions"]),
+        "domains": normalize_domains(user.get("domains") or "*"),
         "created_at": user["created_at"],
         "updated_at": user["updated_at"],
     }

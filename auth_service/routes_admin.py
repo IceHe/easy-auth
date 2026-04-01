@@ -9,7 +9,7 @@ from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
 
 from .db import find_user_by_id, get_db, is_unique_violation, open_db
 from .token_cache import get_or_load_user_by_token, invalidate_tokens
-from .users import has_permission, normalize_permissions, now_iso, now_utc, parse_iso, validate_admin_update
+from .users import has_permission, normalize_domains, normalize_permissions, now_iso, now_utc, parse_iso, validate_admin_update
 
 
 admin_router = APIRouter(prefix="/admin", tags=["admin"])
@@ -140,7 +140,7 @@ def home(request: Request):
         if not current_user:
             return RedirectResponse(url="/admin/login", status_code=303)
         users = db.execute(
-            "SELECT id, name, expires_at, remark, token, permissions, created_at, updated_at, is_admin FROM users ORDER BY id ASC"
+            "SELECT id, name, expires_at, remark, token, permissions, domains, created_at, updated_at, is_admin FROM users ORDER BY id ASC"
         ).fetchall()
         return HTMLResponse(render_admin_html(users, current_user))
     finally:
@@ -159,6 +159,7 @@ async def user_create(request: Request):
         expires_at = str(form.get("expires_at", "")).strip()
         remark = str(form.get("remark", "")).strip()
         token = str(form.get("token", "")).strip()
+        domains = normalize_domains(str(form.get("domains", "")).strip() or "*")
         quick_role = str(form.get("quick_role", "")).strip().lower()
         permissions = QUICK_ROLE_PERMISSIONS.get(quick_role) or normalize_permissions(form.getlist("permissions"))
 
@@ -167,9 +168,10 @@ async def user_create(request: Request):
             expires_at = generate_quick_expires_at()
             remark = ""
             token = generate_quick_token()
+            domains = ["*"]
 
-        if not name or not expires_at or not token or not permissions:
-            return PlainTextResponse("name/expires_at/token/permissions 必填", status_code=400)
+        if not name or not expires_at or not token or not permissions or not domains:
+            return PlainTextResponse("name/expires_at/token/permissions/domains 必填", status_code=400)
         try:
             expires_at = normalize_admin_form_expires_at(expires_at)
         except Exception:
@@ -179,10 +181,10 @@ async def user_create(request: Request):
         try:
             db.execute(
                 """
-                INSERT INTO users (name, token, expires_at, remark, permissions, is_admin, created_at, updated_at)
-                VALUES (%s, %s, %s, %s, %s, FALSE, %s, %s)
+                INSERT INTO users (name, token, expires_at, remark, permissions, domains, is_admin, created_at, updated_at)
+                VALUES (%s, %s, %s, %s, %s, %s, FALSE, %s, %s)
                 """,
-                (name, token, expires_at, remark, ",".join(permissions), ts, ts),
+                (name, token, expires_at, remark, ",".join(permissions), ",".join(domains), ts, ts),
             )
             db.commit()
             invalidate_tokens([token])
@@ -212,9 +214,10 @@ async def user_update(user_id: int, request: Request):
         remark = str(form.get("remark", "")).strip()
         token = str(form.get("token", "")).strip()
         permissions = normalize_permissions(form.getlist("permissions"))
+        domains = normalize_domains(str(form.get("domains", "")).strip() or "*")
 
-        if not name or not expires_at or not token or not permissions:
-            return PlainTextResponse("name/expires_at/token/permissions 必填", status_code=400)
+        if not name or not expires_at or not token or not permissions or not domains:
+            return PlainTextResponse("name/expires_at/token/permissions/domains 必填", status_code=400)
         try:
             expires_at = normalize_admin_form_expires_at(expires_at)
         except Exception:
@@ -231,10 +234,10 @@ async def user_update(user_id: int, request: Request):
             db.execute(
                 """
                 UPDATE users
-                SET name = %s, expires_at = %s, remark = %s, token = %s, permissions = %s, updated_at = %s
+                SET name = %s, expires_at = %s, remark = %s, token = %s, permissions = %s, domains = %s, updated_at = %s
                 WHERE id = %s
                 """,
-                (name, expires_at, remark, token, ",".join(permissions), now_iso(), user_id),
+                (name, expires_at, remark, token, ",".join(permissions), ",".join(domains), now_iso(), user_id),
             )
             db.commit()
             invalidate_tokens([str(user["token"]), token])
@@ -272,6 +275,7 @@ def render_admin_html(users, current_user):
     rows = []
     for u in users:
         permissions = str(u["permissions"])
+        domains = str(u.get("domains") or "*")
         full_token = str(u["token"])
         remark = str(u["remark"] or "")
         rows.append(
@@ -291,6 +295,9 @@ def render_admin_html(users, current_user):
               </td>
               <td class="time-col">{html.escape(format_display_timestamp(str(u['created_at'])))}</td>
               <td class="time-col">{html.escape(format_display_timestamp(str(u['updated_at'])))}</td>
+              <td class="domains-col">
+                <textarea class=\"domains-input\" name=\"domains\" placeholder=\"域名,逗号分隔或*\" rows=\"3\" form=\"update-form-{u['id']}\" required>{html.escape(domains)}</textarea>
+              </td>
               <td class="ops-col">
                 <form id=\"update-form-{u['id']}\" class=\"inline ops-form\" method=\"post\" action=\"/admin/users/{u['id']}\">
                   <input type=\"text\" name=\"name\" value=\"{html.escape(str(u['name']))}\" required>
@@ -335,8 +342,9 @@ def render_admin_html(users, current_user):
           --name-col-width: 128px;
           --time-col-width: 184px;
           --remark-col-width: 160px;
+          --domains-col-width: 220px;
           --token-col-width: 160px;
-          --ops-col-width: 460px;
+          --ops-col-width: 470px;
         }}
         table {{ border-collapse: collapse; width: max(100%, var(--table-min-width)); table-layout: fixed; }}
         table, th, td {{ border: 1px solid #aaa; }}
@@ -363,6 +371,13 @@ def render_admin_html(users, current_user):
         form.inline input[type=text] {{ width: min(100%, 120px); }}
         form.inline input[type=datetime-local] {{ width: min(100%, 190px); }}
         .token {{ width: min(100%, 170px); }}
+        .domains {{ width: 100%; box-sizing: border-box; }}
+        .domains-input {{
+          width: 100%;
+          min-height: 72px;
+          box-sizing: border-box;
+          resize: vertical;
+        }}
         .ops-form {{ margin-bottom: 6px; }}
         .ops-actions {{ display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }}
         .remark-input {{ width: min(100%, 140px); }}
@@ -379,6 +394,7 @@ def render_admin_html(users, current_user):
         .name-col {{ width: var(--name-col-width); }}
         .time-col {{ width: var(--time-col-width); }}
         .remark-col {{ width: var(--remark-col-width); }}
+        .domains-col {{ width: var(--domains-col-width); }}
         .token-col {{ width: var(--token-col-width); }}
         .ops-col {{ width: var(--ops-col-width); }}
         .token-col details,
@@ -394,12 +410,15 @@ def render_admin_html(users, current_user):
             --name-col-width: 112px;
             --time-col-width: 168px;
             --remark-col-width: 144px;
+            --domains-col-width: 200px;
             --token-col-width: 144px;
-            --ops-col-width: 420px;
+            --ops-col-width: 430px;
           }}
           form.inline input[type=text] {{ width: min(100%, 100px); }}
           form.inline input[type=datetime-local] {{ width: min(100%, 170px); }}
           .token {{ width: min(100%, 150px); }}
+          .domains {{ width: 100%; }}
+          .domains-input {{ width: 100%; }}
           .remark-input {{ width: min(100%, 128px); }}
           .remark-col .remark-input {{ width: 100%; }}
           .ops-col input[type=text] {{ width: min(100%, 92px); }}
@@ -418,6 +437,7 @@ def render_admin_html(users, current_user):
         <input name="expires_at" type="datetime-local" value="{html.escape(to_datetime_local_value(generate_quick_expires_at()))}" step="1" required>
         <input name="remark" class="remark-input" type="text" placeholder="备注">
         <input name="token" class="token" type="text" placeholder="token">
+        <input name="domains" class="domains" type="text" value="*" placeholder="域名,逗号分隔或*">
         <label><input type=\"checkbox\" name=\"permissions\" value=\"manage\">管理</label>
         <label><input type=\"checkbox\" name=\"permissions\" value=\"view\">查看</label>
         <label><input type=\"checkbox\" name=\"permissions\" value=\"edit\">编辑</label>
@@ -427,14 +447,14 @@ def render_admin_html(users, current_user):
           <button type=\"submit\" name=\"quick_role\" value=\"viewer\">一键创建查看者</button>
         </span>
       </form>
-      <p>时间使用日期时间控件编辑，按服务器本地时区处理。</p>
+      <p>时间使用日期时间控件编辑，按服务器本地时区处理。域名使用英文逗号分隔，`*` 表示全部域名。</p>
 
       <h2>用户列表</h2>
       <div class="table-wrap">
       <table>
         <thead>
           <tr>
-            <th class="id-col">ID</th><th class="name-col">名称</th><th class="time-col">期限</th><th class="remark-col">备注</th><th class="token-col">Token</th><th class="time-col">创建时间</th><th class="time-col">修改时间</th><th class="ops-col">操作</th>
+            <th class="id-col">ID</th><th class="name-col">名称</th><th class="time-col">期限</th><th class="remark-col">备注</th><th class="token-col">Token</th><th class="time-col">创建时间</th><th class="time-col">修改时间</th><th class="domains-col">域名范围</th><th class="ops-col">操作</th>
           </tr>
         </thead>
         <tbody>
@@ -456,7 +476,8 @@ def render_admin_html(users, current_user):
             {{ key: "time", min: 184, weight: 13, count: 3 }},
             {{ key: "remark", min: 160, weight: 10, count: 1 }},
             {{ key: "token", min: 160, weight: 10, count: 1 }},
-            {{ key: "ops", min: 460, weight: 36, count: 1 }},
+            {{ key: "domains", min: 220, weight: 18, count: 1 }},
+            {{ key: "ops", min: 470, weight: 34, count: 1 }},
           ];
 
           function updateTableWidths() {{
