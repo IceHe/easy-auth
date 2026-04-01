@@ -13,6 +13,10 @@ from .users import has_permission, normalize_permissions, now_iso, now_utc, pars
 
 
 admin_router = APIRouter(prefix="/admin", tags=["admin"])
+FAVICON_LINK_HTML = (
+    '<link rel="icon" type="image/svg+xml" href="/favicon.svg">'
+    '<link rel="alternate icon" type="image/x-icon" href="/favicon.ico">'
+)
 
 
 QUICK_ROLE_PERMISSIONS = {
@@ -65,7 +69,7 @@ def login_page(request: Request):
         f"""
         <!doctype html>
         <html lang="zh">
-        <head><meta charset="utf-8"><title>鉴权后台登录</title></head>
+        <head><meta charset="utf-8">{FAVICON_LINK_HTML}<title>鉴权后台登录</title></head>
         <body>
           <h1>鉴权后台登录</h1>
           {error_html}
@@ -319,6 +323,7 @@ def render_admin_html(users, current_user):
     <head>
       <meta charset=\"utf-8\">
       <meta name="viewport" content="width=device-width, initial-scale=1">
+      {FAVICON_LINK_HTML}
       <title>鉴权管理后台</title>
       <style>
         body {{ font-family: sans-serif; margin: 24px; }}
