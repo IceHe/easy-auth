@@ -1,28 +1,33 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
   <defs>
-    <linearGradient id="bg" x1="10" y1="8" x2="56" y2="58" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#f07a00" />
-      <stop offset="1" stop-color="#ffd24f" />
+    <linearGradient id="bg" x1="8" y1="6" x2="56" y2="58" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#f0b400" />
+      <stop offset="0.55" stop-color="#ffcf33" />
+      <stop offset="1" stop-color="#ffe27a" />
     </linearGradient>
-    <radialGradient id="shine" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(18 14) rotate(35) scale(22 16)">
-      <stop offset="0" stop-color="#ffffff" stop-opacity="0.46" />
-      <stop offset="1" stop-color="#ffffff" stop-opacity="0" />
+    <radialGradient id="glow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(18 14) rotate(30) scale(24 18)">
+      <stop offset="0" stop-color="#fff8d8" stop-opacity="0.6" />
+      <stop offset="1" stop-color="#fff8d8" stop-opacity="0" />
     </radialGradient>
-    <linearGradient id="mark" x1="22" y1="16" x2="40" y2="46" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#fffdf8" />
-      <stop offset="1" stop-color="#fff0d5" />
+    <linearGradient id="shield" x1="22" y1="18" x2="40" y2="48" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fffef8" />
+      <stop offset="1" stop-color="#fff2c9" />
+    </linearGradient>
+    <linearGradient id="lock" x1="26" y1="28" x2="39" y2="45" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#e69a00" />
+      <stop offset="1" stop-color="#bf7600" />
     </linearGradient>
     <filter id="softShadow" x="-20%" y="-20%" width="140%" height="140%">
-      <feDropShadow dx="0" dy="2" stdDeviation="1.8" flood-color="#8c3d00" flood-opacity="0.24" />
+      <feDropShadow dx="0" dy="2" stdDeviation="1.8" flood-color="#9a6200" flood-opacity="0.28" />
     </filter>
   </defs>
-  <g transform="translate(32 32) scale(1.08) translate(-32 -32)">
-    <rect x="4" y="4" width="56" height="56" rx="16" fill="url(#bg)" />
-    <rect x="4" y="4" width="56" height="56" rx="16" fill="url(#shine)" />
-    <rect x="4.75" y="4.75" width="54.5" height="54.5" rx="15.25" fill="none" stroke="#fff4de" stroke-opacity="0.2" stroke-width="1.5" />
-    <g filter="url(#softShadow)">
-      <path d="M32 13 48.5 50H37.7l-2.2-6.4H28.5L26.3 50H15.5L32 13zm0 8.7-4.1 12h8.2L32 21.7z" fill="url(#mark)" />
-      <path d="M31 16 44.8 48h-3.1L31 22 20.3 48h-2.9z" fill="#fff7e8" fill-opacity="0.38" />
-    </g>
+  <rect x="4" y="4" width="56" height="56" rx="16" fill="url(#bg)" />
+  <rect x="4" y="4" width="56" height="56" rx="16" fill="url(#glow)" />
+  <rect x="4.75" y="4.75" width="54.5" height="54.5" rx="15.25" fill="none" stroke="#fff7dd" stroke-opacity="0.4" stroke-width="1.5" />
+  <g filter="url(#softShadow)">
+    <path d="M32 14 46 19.5v11.8c0 9.6-5.5 17.1-14 20.7-8.5-3.6-14-11.1-14-20.7V19.5L32 14z" fill="url(#shield)" />
+    <path d="M32 17.3 43.1 21.7v9.6c0 7.8-4.2 13.9-11.1 17.1-6.9-3.2-11.1-9.3-11.1-17.1v-9.6L32 17.3z" fill="#fff7dc" fill-opacity="0.45" />
+    <path d="M27 29.5v-2.2c0-3.2 2.3-5.6 5-5.6s5 2.4 5 5.6v2.2h1c2.2 0 4 1.8 4 4v8.3c0 2.2-1.8 4-4 4H26c-2.2 0-4-1.8-4-4v-8.3c0-2.2 1.8-4 4-4h1zm3.3 0h3.4v-2.1c0-1.4-.7-2.4-1.7-2.4s-1.7 1-1.7 2.4v2.1z" fill="url(#lock)" />
+    <path d="M32 34.5c1.4 0 2.6 1.1 2.6 2.6 0 0.9-.5 1.8-1.2 2.2V42h-2.8v-2.7c-0.7-0.5-1.2-1.3-1.2-2.2 0-1.5 1.2-2.6 2.6-2.6z" fill="#fff3ce" />
   </g>
 </svg>
