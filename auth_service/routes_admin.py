@@ -74,7 +74,7 @@ def login_page(request: Request):
           <h1>鉴权后台登录</h1>
           {error_html}
           <form id="login-form" method="post" action="/admin/login">
-            <label>Token: <input id="token" type="text" name="token" style="width: 320px;" required></label>
+            <label>Token: <input id="token" type="password" name="token" style="width: 320px;" autocomplete="current-password" autocapitalize="off" autocorrect="off" spellcheck="false" required></label>
             <button type="submit">登录</button>
           </form>
           <script>
