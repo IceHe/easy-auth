@@ -16,6 +16,14 @@ cp .env.example .env
 
 默认监听：`http://127.0.0.1:8080`
 
+本地冒烟验证：
+
+```bash
+./scripts/e2e.sh
+```
+
+`e2e.sh` 需要目标服务已启动，并从 `.env` 或环境变量读取 `AUTH_ADMIN_TOKEN` / `ADMIN_TOKEN`。
+
 ## 2. 初始化管理员
 
 首次启动会自动初始化管理员（仅在数据库中不存在管理员时执行）。

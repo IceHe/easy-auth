@@ -260,40 +260,6 @@ export async function checkAuthByToken(params: {
 // if (!result.valid) throw new Error(result.reason || 'auth failed')
 ```
 
-### Python (requests)
-
-```python
-from typing import Optional, Dict, Any
-import requests
-
-
-def check_auth_by_token(
-    auth_base_url: str,
-    token: str,
-    permission: Optional[str] = None,
-    domain: Optional[str] = None,
-) -> Dict[str, Any]:
-    payload = {"token": token}
-    if permission:
-        payload["permission"] = permission  # manage/view/edit
-    if domain:
-        payload["domain"] = domain
-
-    resp = requests.post(
-        f"{auth_base_url}/api/validate",
-        json=payload,
-        timeout=5,
-    )
-    # /api/validate 约定：业务结果看 JSON 的 valid/reason，不依赖 HTTP 状态码
-    return resp.json()
-
-
-# 使用示例
-# result = check_auth_by_token("http://127.0.0.1:8080", token="xxx", permission="view")
-# if not result.get("valid"):
-#     raise Exception(result.get("reason", "auth failed"))
-```
-
 ### Claude 调用提示词（可直接给其他项目）
 
 ```text
