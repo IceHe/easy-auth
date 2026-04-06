@@ -1,4 +1,5 @@
 import os
+from ipaddress import IPv4Network, IPv6Network, ip_network
 from pathlib import Path
 
 
@@ -38,11 +39,26 @@ def _env_bool(name: str, default: bool) -> bool:
     return value.strip().lower() not in {"0", "false", "no", "off"}
 
 
+def _env_ip_networks(name: str, default: str) -> tuple[IPv4Network | IPv6Network, ...]:
+    raw_value = os.getenv(name, default)
+    networks: list[IPv4Network | IPv6Network] = []
+    for item in raw_value.split(","):
+        value = item.strip()
+        if not value:
+            continue
+        try:
+            networks.append(ip_network(value, strict=False))
+        except ValueError:
+            continue
+    return tuple(networks)
+
+
 AUTH_TOKEN_CACHE_ENABLED = _env_bool("AUTH_TOKEN_CACHE_ENABLED", True)
 AUTH_TOKEN_CACHE_TTL_SECONDS = int(os.getenv("AUTH_TOKEN_CACHE_TTL_SECONDS", "10"))
 AUTH_TOKEN_CACHE_MAX_SIZE = int(os.getenv("AUTH_TOKEN_CACHE_MAX_SIZE", "2000"))
 AUTH_RATE_LIMIT_ENABLED = _env_bool("AUTH_RATE_LIMIT_ENABLED", True)
 AUTH_RATE_LIMIT_TRUST_PROXY = _env_bool("AUTH_RATE_LIMIT_TRUST_PROXY", False)
+AUTH_RATE_LIMIT_IP_WHITELIST = _env_ip_networks("AUTH_RATE_LIMIT_IP_WHITELIST", "127.0.0.1,::1")
 AUTH_RATE_LIMIT_WINDOW_SECONDS = int(os.getenv("AUTH_RATE_LIMIT_WINDOW_SECONDS", "60"))
 AUTH_RATE_LIMIT_API_LOGIN_MAX_REQUESTS = int(os.getenv("AUTH_RATE_LIMIT_API_LOGIN_MAX_REQUESTS", "20"))
 AUTH_RATE_LIMIT_API_VALIDATE_MAX_REQUESTS = int(os.getenv("AUTH_RATE_LIMIT_API_VALIDATE_MAX_REQUESTS", "60"))

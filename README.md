@@ -30,6 +30,7 @@ cp .env.example .env
 - `AUTH_DB_URL`：PostgreSQL 连接串，必填
 - `AUTH_RATE_LIMIT_ENABLED`：是否启用 IP 限流，默认 `true`
 - `AUTH_RATE_LIMIT_TRUST_PROXY`：是否信任 `X-Forwarded-For` 作为客户端 IP，默认 `false`
+- `AUTH_RATE_LIMIT_IP_WHITELIST`：不参与限流的 IP/CIDR 列表，逗号分隔，默认 `127.0.0.1,::1`
 - `AUTH_RATE_LIMIT_WINDOW_SECONDS`：限流窗口秒数，默认 `60`
 - `AUTH_RATE_LIMIT_API_LOGIN_MAX_REQUESTS`：`/api/login` 每 IP 每窗口最大请求数，默认 `20`
 - `AUTH_RATE_LIMIT_API_VALIDATE_MAX_REQUESTS`：`/api/validate` 每 IP 每窗口最大请求数，默认 `60`
@@ -45,6 +46,8 @@ AUTH_SECRET_KEY=replace-with-random
 ```
 
 启动前请先确保 PostgreSQL 数据库已创建且连接串可用。服务会自动建表并初始化首个管理员账号。
+
+默认会将 `127.0.0.1` 和 `::1` 视为限流白名单，避免本机服务调用误触发限流。
 
 部署到 systemd：
 

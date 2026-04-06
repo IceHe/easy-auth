@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 from collections import defaultdict, deque
+from ipaddress import ip_address
 from math import ceil
 from threading import RLock
 from time import monotonic
 
 from fastapi import Request
 
-from .config import AUTH_RATE_LIMIT_ENABLED, AUTH_RATE_LIMIT_TRUST_PROXY
+from .config import AUTH_RATE_LIMIT_ENABLED, AUTH_RATE_LIMIT_IP_WHITELIST, AUTH_RATE_LIMIT_TRUST_PROXY
 
 
 _LOCK = RLock()
@@ -29,11 +30,23 @@ def get_client_ip(request: Request) -> str:
     return "unknown"
 
 
+def is_rate_limit_exempt(client_ip: str) -> bool:
+    try:
+        parsed_ip = ip_address(client_ip)
+    except ValueError:
+        return False
+    return any(parsed_ip in network for network in AUTH_RATE_LIMIT_IP_WHITELIST)
+
+
 def check_rate_limit(request: Request, scope: str, max_requests: int, window_seconds: int) -> int | None:
     if not AUTH_RATE_LIMIT_ENABLED or max_requests <= 0 or window_seconds <= 0:
         return None
 
-    key = (scope, get_client_ip(request))
+    client_ip = get_client_ip(request)
+    if is_rate_limit_exempt(client_ip):
+        return None
+
+    key = (scope, client_ip)
     now = monotonic()
 
     with _LOCK:
