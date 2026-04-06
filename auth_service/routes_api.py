@@ -1,12 +1,14 @@
 from typing import List
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
 import psycopg
 
+from .config import AUTH_RATE_LIMIT_API_LOGIN_MAX_REQUESTS, AUTH_RATE_LIMIT_API_VALIDATE_MAX_REQUESTS, AUTH_RATE_LIMIT_WINDOW_SECONDS
 from .db import find_user_by_id, get_db, is_unique_violation
 from .decorators import get_current_user
+from .rate_limit import check_rate_limit
 from .token_cache import get_or_load_user_by_token, invalidate_tokens
 from .users import has_domain_access, has_permission, normalize_domains, normalize_permissions, now_iso, now_utc, parse_iso, validate_admin_update
 
@@ -43,7 +45,20 @@ class UserUpdatePayload(BaseModel):
 
 
 @api_router.post("/login")
-def api_login(payload: LoginRequest, db=Depends(get_db)):
+def api_login(payload: LoginRequest, request: Request, db=Depends(get_db)):
+    retry_after = check_rate_limit(
+        request,
+        scope="api_login",
+        max_requests=AUTH_RATE_LIMIT_API_LOGIN_MAX_REQUESTS,
+        window_seconds=AUTH_RATE_LIMIT_WINDOW_SECONDS,
+    )
+    if retry_after is not None:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="too many requests",
+            headers={"Retry-After": str(retry_after)},
+        )
+
     token = payload.token.strip()
     if not token:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="token is required")
@@ -58,7 +73,20 @@ def api_login(payload: LoginRequest, db=Depends(get_db)):
 
 
 @api_router.post("/validate")
-def api_validate(payload: ValidateTokenRequest, db=Depends(get_db)):
+def api_validate(payload: ValidateTokenRequest, request: Request, db=Depends(get_db)):
+    retry_after = check_rate_limit(
+        request,
+        scope="api_validate",
+        max_requests=AUTH_RATE_LIMIT_API_VALIDATE_MAX_REQUESTS,
+        window_seconds=AUTH_RATE_LIMIT_WINDOW_SECONDS,
+    )
+    if retry_after is not None:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="too many requests",
+            headers={"Retry-After": str(retry_after)},
+        )
+
     token = payload.token.strip()
     permission = (payload.permission or "").strip().lower()
     domain = (payload.domain or "").strip()

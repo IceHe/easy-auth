@@ -58,6 +58,7 @@
 **失败响应**
 - `400`：`token is required`
 - `401`：`invalid token` / `token expired`
+- `429`：`too many requests`
 
 ---
 
@@ -108,6 +109,8 @@
 - `invalid permission`
 - `forbidden`（token 有效但不具备请求权限）
 - `forbidden domain`（token 有效，但域名范围不匹配）
+
+限流命中时接口返回 `429`，并带 `Retry-After` 响应头。
 
 > 说明：`manage` 用户请求 `view` / `edit` 时会通过。
 

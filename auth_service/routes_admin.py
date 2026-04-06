@@ -7,7 +7,9 @@ import psycopg
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
 
+from .config import AUTH_RATE_LIMIT_ADMIN_LOGIN_MAX_REQUESTS, AUTH_RATE_LIMIT_WINDOW_SECONDS
 from .db import find_user_by_id, get_db, is_unique_violation, open_db
+from .rate_limit import check_rate_limit
 from .token_cache import get_or_load_user_by_token, invalidate_tokens
 from .users import has_permission, normalize_domains, normalize_permissions, now_iso, now_utc, parse_iso, validate_admin_update
 
@@ -62,6 +64,7 @@ def login_page(request: Request):
         "expired": "token 已过期",
         "forbidden": "仅管理员可登录后台",
         "logged_out": "已退出登录",
+        "rate_limited": "请求过多，请稍后再试",
     }
     error_text = error_map.get(error, "")
     error_html = f"<p style='color:#b91c1c'>{html.escape(error_text)}</p>" if error_text else ""
@@ -114,6 +117,19 @@ def login_page(request: Request):
 
 @admin_router.post("/login")
 def login_submit(request: Request, token: str = Form(...), db=Depends(get_db)):
+    retry_after = check_rate_limit(
+        request,
+        scope="admin_login",
+        max_requests=AUTH_RATE_LIMIT_ADMIN_LOGIN_MAX_REQUESTS,
+        window_seconds=AUTH_RATE_LIMIT_WINDOW_SECONDS,
+    )
+    if retry_after is not None:
+        return RedirectResponse(
+            url="/admin/login?error=rate_limited",
+            status_code=303,
+            headers={"Retry-After": str(retry_after)},
+        )
+
     user = get_or_load_user_by_token(db, token.strip())
     if not user:
         return RedirectResponse(url="/admin/login?error=invalid", status_code=303)

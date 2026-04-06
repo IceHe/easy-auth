@@ -1,0 +1,15 @@
+[Unit]
+Description=Wuwa Auth Go Service
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/root/wuwa/auth
+ExecStart=/root/wuwa/auth/bin/wuwa-auth
+Restart=always
+RestartSec=3
+User=root
+Environment=PORT=8080
+
+[Install]
+WantedBy=multi-user.target

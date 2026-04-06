@@ -1,4 +1,4 @@
-# 简单通用鉴权服务（FastAPI）
+# 简单通用鉴权服务（Go）
 
 支持能力：
 - 通过 token 文本登录（API）
@@ -9,11 +9,9 @@
 ## 1. 安装与启动
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
 cp .env.example .env
-python app.py
+./scripts/build.sh
+./bin/wuwa-auth
 ```
 
 默认监听：`http://127.0.0.1:8080`
@@ -30,6 +28,12 @@ python app.py
 - `AUTH_ADMIN_EXPIRES_AT`：管理员到期时间（ISO），默认 `2099-12-31T23:59:59+00:00`
 - `AUTH_SECRET_KEY`：Session 密钥，默认 `change-me-session-secret`，生产环境务必覆盖
 - `AUTH_DB_URL`：PostgreSQL 连接串，必填
+- `AUTH_RATE_LIMIT_ENABLED`：是否启用 IP 限流，默认 `true`
+- `AUTH_RATE_LIMIT_TRUST_PROXY`：是否信任 `X-Forwarded-For` 作为客户端 IP，默认 `false`
+- `AUTH_RATE_LIMIT_WINDOW_SECONDS`：限流窗口秒数，默认 `60`
+- `AUTH_RATE_LIMIT_API_LOGIN_MAX_REQUESTS`：`/api/login` 每 IP 每窗口最大请求数，默认 `20`
+- `AUTH_RATE_LIMIT_API_VALIDATE_MAX_REQUESTS`：`/api/validate` 每 IP 每窗口最大请求数，默认 `60`
+- `AUTH_RATE_LIMIT_ADMIN_LOGIN_MAX_REQUESTS`：`/admin/login` 每 IP 每窗口最大请求数，默认 `10`
 
 `.env` 示例：
 
@@ -41,6 +45,15 @@ AUTH_SECRET_KEY=replace-with-random
 ```
 
 启动前请先确保 PostgreSQL 数据库已创建且连接串可用。服务会自动建表并初始化首个管理员账号。
+
+部署到 systemd：
+
+```bash
+./scripts/build.sh
+install -m 644 deploy/wuwa-auth.service /etc/systemd/system/wuwa-auth.service
+systemctl daemon-reload
+systemctl restart wuwa-auth.service
+```
 
 ## 3. 登录与鉴权
 
