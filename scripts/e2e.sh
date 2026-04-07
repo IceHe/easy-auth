@@ -50,6 +50,12 @@ trap cleanup EXIT
 health_body="$(curl -fsS "$BASE_URL/healthz")"
 assert_contains "$health_body" '"ok":true' "GET /healthz did not return ok=true"
 
+root_status="$(curl -sS -o /dev/null -w '%{http_code}' "$BASE_URL/")"
+if [[ "$root_status" != "303" ]]; then
+  echo "e2e failed: expected 303 from GET /, got $root_status" >&2
+  exit 1
+fi
+
 login_body="$(curl -fsS \
   -H 'Content-Type: application/json' \
   -d "{\"token\":\"$ADMIN_TOKEN\"}" \
