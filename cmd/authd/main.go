@@ -15,6 +15,7 @@ import (
 	"html"
 	"io/fs"
 	"log"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -53,6 +54,7 @@ type Config struct {
 	TokenCacheMaxSize      int
 	RateLimitEnabled       bool
 	RateLimitTrustProxy    bool
+	RateLimitIPWhitelist   []string
 	RateLimitWindow        time.Duration
 	APILoginMaxRequests    int
 	APIValidateMaxRequests int
@@ -130,8 +132,10 @@ type tokenCacheEntry struct {
 }
 
 type RateLimiter struct {
-	enabled    bool
-	trustProxy bool
+	enabled       bool
+	trustProxy    bool
+	whitelistIPs  []net.IP
+	whitelistNets []*net.IPNet
 
 	mu           sync.Mutex
 	hits         map[string][]time.Time
@@ -158,14 +162,21 @@ func main() {
 	}
 	defer database.Close()
 
+	whitelistIPs, whitelistNets, err := parseIPWhitelist(cfg.RateLimitIPWhitelist)
+	if err != nil {
+		log.Fatalf("parse rate limit whitelist: %v", err)
+	}
+
 	server := &Server{
 		cfg:        cfg,
 		db:         database,
 		tokenCache: NewTokenCache(cfg.TokenCacheEnabled, cfg.TokenCacheTTL, cfg.TokenCacheMaxSize),
 		rateLimiter: &RateLimiter{
-			enabled:    cfg.RateLimitEnabled,
-			trustProxy: cfg.RateLimitTrustProxy,
-			hits:       make(map[string][]time.Time),
+			enabled:       cfg.RateLimitEnabled,
+			trustProxy:    cfg.RateLimitTrustProxy,
+			whitelistIPs:  whitelistIPs,
+			whitelistNets: whitelistNets,
+			hits:          make(map[string][]time.Time),
 		},
 		assets: mustAssets(),
 	}
@@ -225,6 +236,7 @@ func loadConfig() (Config, error) {
 		TokenCacheMaxSize:      envInt("AUTH_TOKEN_CACHE_MAX_SIZE", 2000),
 		RateLimitEnabled:       envBool("AUTH_RATE_LIMIT_ENABLED", true),
 		RateLimitTrustProxy:    envBool("AUTH_RATE_LIMIT_TRUST_PROXY", false),
+		RateLimitIPWhitelist:   envCSV("AUTH_RATE_LIMIT_IP_WHITELIST", []string{"127.0.0.1", "::1"}),
 		RateLimitWindow:        time.Duration(envInt("AUTH_RATE_LIMIT_WINDOW_SECONDS", 60)) * time.Second,
 		APILoginMaxRequests:    envInt("AUTH_RATE_LIMIT_API_LOGIN_MAX_REQUESTS", 20),
 		APIValidateMaxRequests: envInt("AUTH_RATE_LIMIT_API_VALIDATE_MAX_REQUESTS", 60),
@@ -287,6 +299,49 @@ func envBool(name string, fallback bool) bool {
 	default:
 		return true
 	}
+}
+
+func envCSV(name string, fallback []string) []string {
+	value := strings.TrimSpace(os.Getenv(name))
+	if value == "" {
+		return append([]string(nil), fallback...)
+	}
+	parts := strings.Split(value, ",")
+	result := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if trimmed := strings.TrimSpace(part); trimmed != "" {
+			result = append(result, trimmed)
+		}
+	}
+	if len(result) == 0 {
+		return append([]string(nil), fallback...)
+	}
+	return result
+}
+
+func parseIPWhitelist(values []string) ([]net.IP, []*net.IPNet, error) {
+	ips := make([]net.IP, 0, len(values))
+	nets := make([]*net.IPNet, 0, len(values))
+	for _, raw := range values {
+		entry := strings.TrimSpace(raw)
+		if entry == "" {
+			continue
+		}
+		if strings.Contains(entry, "/") {
+			_, network, err := net.ParseCIDR(entry)
+			if err != nil {
+				return nil, nil, fmt.Errorf("invalid AUTH_RATE_LIMIT_IP_WHITELIST entry %q: %w", entry, err)
+			}
+			nets = append(nets, network)
+			continue
+		}
+		ip := net.ParseIP(entry)
+		if ip == nil {
+			return nil, nil, fmt.Errorf("invalid AUTH_RATE_LIMIT_IP_WHITELIST entry %q", entry)
+		}
+		ips = append(ips, ip)
+	}
+	return ips, nets, nil
 }
 
 func envInt(name string, fallback int) int {
@@ -466,7 +521,12 @@ func (r *RateLimiter) Check(request *http.Request, scope string, maxRequests int
 		return 0
 	}
 
-	key := scope + "|" + r.clientIP(request)
+	clientIP := r.clientIP(request)
+	if r.isWhitelisted(clientIP) {
+		return 0
+	}
+
+	key := scope + "|" + clientIP
 	now := time.Now()
 
 	r.mu.Lock()
@@ -500,6 +560,24 @@ func (r *RateLimiter) cleanup(now time.Time, defaultWindow time.Duration) {
 		}
 		r.hits[key] = trimmed
 	}
+}
+
+func (r *RateLimiter) isWhitelisted(raw string) bool {
+	ip := net.ParseIP(strings.TrimSpace(raw))
+	if ip == nil {
+		return false
+	}
+	for _, allowed := range r.whitelistIPs {
+		if allowed.Equal(ip) {
+			return true
+		}
+	}
+	for _, network := range r.whitelistNets {
+		if network.Contains(ip) {
+			return true
+		}
+	}
+	return false
 }
 
 func (r *RateLimiter) clientIP(request *http.Request) string {
@@ -1617,6 +1695,13 @@ func generateQuickExpiresAt() string {
 }
 
 func normalizeAdminFormExpiresAt(raw string) (string, error) {
+	raw = strings.TrimSpace(raw)
+	if strings.HasSuffix(raw, "Z") || hasExplicitUTCOffset(raw) {
+		if parsed, err := parseISO(raw); err == nil {
+			return parsed.UTC().Format(time.RFC3339Nano), nil
+		}
+	}
+
 	location := time.Now().Location()
 	layouts := []string{
 		"2006-01-02T15:04:05",
@@ -1629,6 +1714,22 @@ func normalizeAdminFormExpiresAt(raw string) (string, error) {
 		}
 	}
 	return "", errors.New("invalid datetime-local")
+}
+
+func hasExplicitUTCOffset(raw string) bool {
+	if len(raw) < len("2006-01-02T15:04:05+08:00") {
+		return false
+	}
+	offset := raw[len(raw)-6:]
+	if (offset[0] != '+' && offset[0] != '-') || offset[3] != ':' {
+		return false
+	}
+	for _, index := range []int{1, 2, 4, 5} {
+		if offset[index] < '0' || offset[index] > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 func toDateTimeLocalValue(raw string) string {
