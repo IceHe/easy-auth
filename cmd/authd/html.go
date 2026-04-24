@@ -75,7 +75,7 @@ func renderAdminHTML(users []User, currentUser User) string {
               <td class="name-col">%s</td>
               <td class="time-col">%s</td>
               <td class="remark-col">
-                <textarea class="remark-input" name="remark" placeholder="备注" rows="3" form="update-form-%d">%s</textarea>
+                <textarea class="remark-input js-autosave" name="remark" data-autosave-field="remark" placeholder="备注" rows="3" form="update-form-%d">%s</textarea>
               </td>
               <td class="token-col">
                 <details>
@@ -86,19 +86,19 @@ func renderAdminHTML(users []User, currentUser User) string {
               <td class="time-col">%s</td>
               <td class="time-col">%s</td>
               <td class="domains-col">
-                <textarea class="domains-input" name="domains" placeholder="域名,逗号分隔或*" rows="3" form="update-form-%d" required>%s</textarea>
+                <textarea class="domains-input js-autosave" name="domains" data-autosave-field="domains" placeholder="域名,逗号分隔或*" rows="3" form="update-form-%d" required>%s</textarea>
               </td>
               <td class="ops-col">
                 <form id="update-form-%d" class="inline ops-form" method="post" action="/admin/users/%d">
                   <input type="text" name="name" value="%s" required>
-                  <input type="datetime-local" name="expires_at" value="%s" step="1" required>
+                  <input class="js-autosave" type="datetime-local" name="expires_at" value="%s" step="1" data-autosave-field="expires_at" required>
                   <input class="token" type="password" name="token" value="%s" required>
-                  <label><input type="checkbox" name="permissions" value="manage" %s>管</label>
-                  <label><input type="checkbox" name="permissions" value="view" %s>看</label>
-                  <label><input type="checkbox" name="permissions" value="edit" %s>编</label>
+                  <label><input class="js-autosave" type="checkbox" name="permissions" value="manage" data-autosave-field="permissions" %s>管</label>
+                  <label><input class="js-autosave" type="checkbox" name="permissions" value="view" data-autosave-field="permissions" %s>看</label>
+                  <label><input class="js-autosave" type="checkbox" name="permissions" value="edit" data-autosave-field="permissions" %s>编</label>
                 </form>
                 <div class="ops-actions">
-                  <button type="submit" form="update-form-%d">更新</button>
+                  <button type="submit" form="update-form-%d">更新名称和token</button>
                   %s
                 </div>
               </td>
@@ -296,6 +296,88 @@ func renderAdminHTML(users []User, currentUser User) string {
         window.addEventListener("resize", updateTableWidths);
       }
       updateTableWidths();
+
+      const autoFields = ["expires_at", "remark", "domains", "permissions"];
+      const saveInFlight = new WeakSet();
+
+      function controlValue(control) {
+        if (control.type === "checkbox") {
+          const form = control.form;
+          if (!form) {
+            return "";
+          }
+          return Array.from(form.querySelectorAll("input[name=permissions]:checked"))
+            .map(function (item) { return item.value; })
+            .join(",");
+        }
+        return control.value;
+      }
+
+      function rememberValue(control) {
+        control.dataset.autosaveValue = controlValue(control);
+      }
+
+      function appendFormValues(params, form) {
+        const data = new FormData(form);
+        for (const name of autoFields) {
+          if (name === "permissions") {
+            const permissions = data.getAll("permissions");
+            for (const permission of permissions) {
+              params.append("permissions", permission);
+            }
+          } else {
+            params.set(name, data.get(name) || "");
+          }
+        }
+      }
+
+      function autosave(control) {
+        const field = control.dataset.autosaveField || control.name;
+        const form = control.form;
+        if (!form || !field || saveInFlight.has(form)) {
+          return;
+        }
+
+        saveInFlight.add(form);
+        const params = new URLSearchParams();
+        params.set("field", field);
+        appendFormValues(params, form);
+
+        fetch(form.action + "/autosave", {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: params,
+          credentials: "same-origin"
+        }).then(function (response) {
+          if (!response.ok) {
+            return response.text().then(function (text) {
+              throw new Error(text || "自动更新失败");
+            });
+          }
+          window.location.reload();
+        }).catch(function (error) {
+          saveInFlight.delete(form);
+          alert(error.message || "自动更新失败");
+        });
+      }
+
+      document.querySelectorAll(".js-autosave").forEach(function (control) {
+        rememberValue(control);
+        if (control.type === "checkbox" || control.type === "datetime-local") {
+          control.addEventListener("change", function () {
+            autosave(control);
+          });
+          return;
+        }
+        control.addEventListener("blur", function () {
+          const nextValue = controlValue(control);
+          if (nextValue === control.dataset.autosaveValue) {
+            return;
+          }
+          rememberValue(control);
+          autosave(control);
+        });
+      });
     })();
   </script>
 </body>

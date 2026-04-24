@@ -24,7 +24,7 @@ cp .env.example .env
 - Build command: `./scripts/build.sh`
 - End-to-end smoke test against a running service: `./scripts/e2e.sh`
 - No dedicated lint configuration is present in the repository.
-- No Go unit test suite is currently present.
+- Run Go tests with `go test ./...`.
 
 ## Architecture overview
 
@@ -53,8 +53,11 @@ Both surfaces share the same `users` table and permission logic.
 ### Route split
 - `/api/login`, `/api/validate`, `/api/me`, and `/api/users` are served from `cmd/authd/main.go`.
 - `/admin/login`, `/admin`, and `/admin/logout` are also implemented in the same Go binary.
+- The admin UI also has a form-only autosave route at `POST /admin/users/{userID}/autosave`.
 
 ## Key behavioral details
 - `permissions` are stored as CSV text in DB; route code normalizes before checks/persistence.
 - `expires_at` is stored as ISO datetime text and validated on login/auth checks.
+- In the admin UI, `expires_at`, remark, domains, and permissions autosave; name/token changes require the `更新名称和token` button.
+- Admin autosave must preserve the existing DB name/token values instead of trusting hidden or edited form values for those fields.
 - Updating admin-related env vars does not update an existing admin row automatically; bootstrap only creates the first admin when absent.

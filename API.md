@@ -206,6 +206,26 @@
 - `404`：`user not found`
 - `400`：`admin user cannot be deleted`
 
+## 6) 管理后台表单接口
+
+以下接口供服务端渲染的 `/admin` 页面使用，不作为外部 JSON API。
+
+### POST `/admin/users/{user_id}/autosave`
+
+需要已登录管理员 session。
+
+用于用户列表自动保存以下字段：
+- `expires_at`
+- `remark`
+- `domains`
+- `permissions`
+
+请求为 `application/x-www-form-urlencoded`，包含 `field` 和当前行的自动保存字段值。后端会保留数据库中已有的 `name` 和 `token`，因此自动保存不会顺带保存未点击 `更新名称和token` 的名称或 token 改动。
+
+**成功响应**：`200` + `ok`
+
+**失败响应**：返回中文纯文本错误，例如 `管理员账号必须保留 manage 权限`、`管理员账号不能设置为已过期`。
+
 ---
 
 ## 给其他项目 Claude 的调用建议

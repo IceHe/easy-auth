@@ -204,6 +204,82 @@ func (s *Server) handleAdminUsersUpdate(w http.ResponseWriter, r *http.Request) 
 	http.Redirect(w, r, "/admin", http.StatusSeeOther)
 }
 
+func (s *Server) handleAdminUsersAutosave(w http.ResponseWriter, r *http.Request) {
+	_, ok, err := s.adminFromSession(r)
+	if err != nil {
+		s.internalError(w, err)
+		return
+	}
+	if !ok {
+		writePlainText(w, http.StatusUnauthorized, "请先登录")
+		return
+	}
+
+	userID, parsed := parsePathID(r.PathValue("userID"))
+	if !parsed {
+		http.NotFound(w, r)
+		return
+	}
+
+	user, err := s.findUserByID(r.Context(), userID)
+	if err != nil {
+		s.internalError(w, err)
+		return
+	}
+	if user == nil {
+		writePlainText(w, http.StatusNotFound, "用户不存在")
+		return
+	}
+
+	if err := r.ParseForm(); err != nil {
+		writePlainText(w, http.StatusBadRequest, "参数错误")
+		return
+	}
+
+	switch strings.TrimSpace(r.FormValue("field")) {
+	case "expires_at", "remark", "domains", "permissions":
+	default:
+		writePlainText(w, http.StatusBadRequest, "自动更新字段不支持")
+		return
+	}
+
+	payload := UserPayload{
+		Name:        user.Name,
+		Token:       user.Token,
+		ExpiresAt:   strings.TrimSpace(r.FormValue("expires_at")),
+		Remark:      strings.TrimSpace(r.FormValue("remark")),
+		Permissions: r.Form["permissions"],
+		Domains:     splitCSV(r.FormValue("domains")),
+	}
+	normalized, message := normalizeAdminFormPayload(payload)
+	if message != "" {
+		writePlainText(w, http.StatusBadRequest, message)
+		return
+	}
+
+	if adminMessage := validateAdminUpdate(*user, normalized.Permissions, normalized.ExpiresAt); adminMessage != "" {
+		switch adminMessage {
+		case "admin user must keep manage permission":
+			writePlainText(w, http.StatusBadRequest, "管理员账号必须保留 manage 权限")
+		case "admin user cannot be expired":
+			writePlainText(w, http.StatusBadRequest, "管理员账号不能设置为已过期")
+		default:
+			writePlainText(w, http.StatusBadRequest, adminMessage)
+		}
+		return
+	}
+
+	if err := s.updateUser(r.Context(), userID, normalized, *user); err != nil {
+		if isUniqueViolation(err) {
+			writePlainText(w, http.StatusConflict, "token 已存在")
+			return
+		}
+		s.internalError(w, err)
+		return
+	}
+	writePlainText(w, http.StatusOK, "ok")
+}
+
 func (s *Server) handleAdminUsersDelete(w http.ResponseWriter, r *http.Request) {
 	_, ok, err := s.adminFromSession(r)
 	if err != nil {

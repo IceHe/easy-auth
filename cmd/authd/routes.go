@@ -30,6 +30,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("GET /admin/", s.handleAdminHome)
 	mux.HandleFunc("POST /admin/users", s.handleAdminUsersCreate)
 	mux.HandleFunc("POST /admin/users/{userID}", s.handleAdminUsersUpdate)
+	mux.HandleFunc("POST /admin/users/{userID}/autosave", s.handleAdminUsersAutosave)
 	mux.HandleFunc("POST /admin/users/{userID}/delete", s.handleAdminUsersDelete)
 
 	return loggingMiddleware(mux)
