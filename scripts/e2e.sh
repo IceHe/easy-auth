@@ -26,6 +26,16 @@ assert_contains() {
   fi
 }
 
+assert_not_contains() {
+  local haystack="$1"
+  local needle="$2"
+  local message="$3"
+  if [[ "$haystack" == *"$needle"* ]]; then
+    echo "e2e failed: $message" >&2
+    exit 1
+  fi
+}
+
 load_dotenv
 
 BASE_URL="${BASE_URL:-http://127.0.0.1:8080}"
@@ -120,5 +130,42 @@ if [[ "$delete_status" != "200" ]]; then
   exit 1
 fi
 assert_contains "$delete_body" '"ok":true' "DELETE /api/users/{id} did not return ok=true"
+
+deleted_users_body="$(curl -fsS -b "$cookie_jar" "$BASE_URL/admin/deleted-users")"
+assert_contains "$deleted_users_body" "$test_name" "GET /admin/deleted-users did not show the deleted user"
+assert_contains "$deleted_users_body" "$test_token" "GET /admin/deleted-users did not show the deleted user token"
+
+deleted_users_api_body="$(curl -fsS -H "Authorization: Bearer $ADMIN_TOKEN" "$BASE_URL/api/users")"
+assert_not_contains "$deleted_users_api_body" "\"token\":\"$test_token\"" "GET /api/users still returned the deleted user"
+
+deleted_validate_body="$(curl -fsS \
+  -H 'Content-Type: application/json' \
+  -d "{\"token\":\"$test_token\",\"permission\":\"edit\",\"domain\":\"$test_domain\"}" \
+  "$BASE_URL/api/validate")"
+assert_contains "$deleted_validate_body" '"valid":false' "POST /api/validate did not reject the deleted token"
+assert_contains "$deleted_validate_body" '"reason":"invalid token"' "POST /api/validate did not mark the deleted token invalid"
+
+restore_status="$(curl -sS -o /tmp/wuwa-auth-e2e-restore.txt -w '%{http_code}' \
+  -b "$cookie_jar" \
+  -X POST \
+  "$BASE_URL/admin/users/$test_user_id/restore")"
+restore_body="$(cat /tmp/wuwa-auth-e2e-restore.txt)"
+rm -f /tmp/wuwa-auth-e2e-restore.txt
+if [[ "$restore_status" != "303" ]]; then
+  echo "e2e failed: expected 303 from POST /admin/users/$test_user_id/restore, got $restore_status: $restore_body" >&2
+  exit 1
+fi
+
+restored_users_api_body="$(curl -fsS -H "Authorization: Bearer $ADMIN_TOKEN" "$BASE_URL/api/users")"
+assert_contains "$restored_users_api_body" "\"token\":\"$test_token\"" "GET /api/users did not return the restored user"
+
+restored_validate_body="$(curl -fsS \
+  -H 'Content-Type: application/json' \
+  -d "{\"token\":\"$test_token\",\"permission\":\"edit\",\"domain\":\"$test_domain\"}" \
+  "$BASE_URL/api/validate")"
+assert_contains "$restored_validate_body" '"valid":true' "POST /api/validate did not accept the restored token"
+
+restored_deleted_users_body="$(curl -fsS -b "$cookie_jar" "$BASE_URL/admin/deleted-users")"
+assert_not_contains "$restored_deleted_users_body" "$test_name" "GET /admin/deleted-users still showed the restored user"
 
 echo "e2e ok"

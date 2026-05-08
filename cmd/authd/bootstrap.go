@@ -56,10 +56,12 @@ func (s *Server) ensureSchema(ctx context.Context) error {
 			domains TEXT NOT NULL DEFAULT '*',
 			is_admin BOOLEAN NOT NULL DEFAULT FALSE,
 			created_at TEXT NOT NULL,
-			updated_at TEXT NOT NULL
+			updated_at TEXT NOT NULL,
+			deleted_at TEXT NOT NULL DEFAULT ''
 		)`,
 		`ALTER TABLE users ADD COLUMN IF NOT EXISTS remark TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE users ADD COLUMN IF NOT EXISTS domains TEXT NOT NULL DEFAULT '*'`,
+		`ALTER TABLE users ADD COLUMN IF NOT EXISTS deleted_at TEXT NOT NULL DEFAULT ''`,
 	}
 	for _, statement := range statements {
 		if _, err := s.db.ExecContext(ctx, statement); err != nil {

@@ -50,6 +50,7 @@ type User struct {
 	CreatedAt   string `json:"created_at"`
 	UpdatedAt   string `json:"updated_at"`
 	IsAdmin     bool   `json:"is_admin,omitempty"`
+	DeletedAt   string `json:"-"`
 }
 
 type PublicUser struct {

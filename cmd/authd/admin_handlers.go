@@ -1,6 +1,8 @@
 package main
 
 import (
+	"database/sql"
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -79,6 +81,27 @@ func (s *Server) handleAdminHome(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_, _ = w.Write([]byte(renderAdminHTML(users, *currentUser)))
+}
+
+func (s *Server) handleAdminDeletedUsers(w http.ResponseWriter, r *http.Request) {
+	currentUser, ok, err := s.adminFromSession(r)
+	if err != nil {
+		s.internalError(w, err)
+		return
+	}
+	if !ok {
+		http.Redirect(w, r, "/admin/login", http.StatusSeeOther)
+		return
+	}
+
+	users, err := s.listDeletedUsers(r.Context())
+	if err != nil {
+		s.internalError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_, _ = w.Write([]byte(renderDeletedUsersHTML(users, *currentUser)))
 }
 
 func (s *Server) handleAdminUsersCreate(w http.ResponseWriter, r *http.Request) {
@@ -194,6 +217,10 @@ func (s *Server) handleAdminUsersUpdate(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if err := s.updateUser(r.Context(), userID, normalized, *user); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			writePlainText(w, http.StatusNotFound, "用户不存在")
+			return
+		}
 		if isUniqueViolation(err) {
 			writePlainText(w, http.StatusConflict, "token 已存在")
 			return
@@ -270,6 +297,10 @@ func (s *Server) handleAdminUsersAutosave(w http.ResponseWriter, r *http.Request
 	}
 
 	if err := s.updateUser(r.Context(), userID, normalized, *user); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			writePlainText(w, http.StatusNotFound, "用户不存在")
+			return
+		}
 		if isUniqueViolation(err) {
 			writePlainText(w, http.StatusConflict, "token 已存在")
 			return
@@ -311,10 +342,51 @@ func (s *Server) handleAdminUsersDelete(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if _, err := s.db.ExecContext(r.Context(), `DELETE FROM users WHERE id = $1`, userID); err != nil {
+	if err := s.softDeleteUser(r.Context(), *user); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			writePlainText(w, http.StatusNotFound, "用户不存在")
+			return
+		}
 		s.internalError(w, err)
 		return
 	}
-	s.tokenCache.Invalidate(user.Token)
 	http.Redirect(w, r, "/admin", http.StatusSeeOther)
+}
+
+func (s *Server) handleAdminUsersRestore(w http.ResponseWriter, r *http.Request) {
+	_, ok, err := s.adminFromSession(r)
+	if err != nil {
+		s.internalError(w, err)
+		return
+	}
+	if !ok {
+		http.Redirect(w, r, "/admin/login", http.StatusSeeOther)
+		return
+	}
+
+	userID, parsed := parsePathID(r.PathValue("userID"))
+	if !parsed {
+		http.NotFound(w, r)
+		return
+	}
+
+	user, err := s.findAnyUserByID(r.Context(), userID)
+	if err != nil {
+		s.internalError(w, err)
+		return
+	}
+	if user == nil || strings.TrimSpace(user.DeletedAt) == "" {
+		writePlainText(w, http.StatusNotFound, "用户不存在")
+		return
+	}
+
+	if err := s.restoreUser(r.Context(), *user); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			writePlainText(w, http.StatusNotFound, "用户不存在")
+			return
+		}
+		s.internalError(w, err)
+		return
+	}
+	http.Redirect(w, r, "/admin/deleted-users", http.StatusSeeOther)
 }

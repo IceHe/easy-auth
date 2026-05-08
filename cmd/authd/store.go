@@ -7,18 +7,43 @@ import (
 	"strings"
 )
 
+const userSelectColumns = `id, name, token, expires_at, remark, permissions, domains, created_at, updated_at, is_admin, deleted_at`
+
 func (s *Server) findUserByToken(ctx context.Context, token string) (*User, error) {
-	query := `SELECT id, name, token, expires_at, remark, permissions, domains, created_at, updated_at, is_admin FROM users WHERE token = $1`
+	query := `SELECT ` + userSelectColumns + ` FROM users WHERE token = $1 AND deleted_at = ''`
 	return scanSingleUser(s.db.QueryRowContext(ctx, query, token))
 }
 
 func (s *Server) findUserByID(ctx context.Context, userID int64) (*User, error) {
-	query := `SELECT id, name, token, expires_at, remark, permissions, domains, created_at, updated_at, is_admin FROM users WHERE id = $1`
+	query := `SELECT ` + userSelectColumns + ` FROM users WHERE id = $1 AND deleted_at = ''`
+	return scanSingleUser(s.db.QueryRowContext(ctx, query, userID))
+}
+
+func (s *Server) findAnyUserByID(ctx context.Context, userID int64) (*User, error) {
+	query := `SELECT ` + userSelectColumns + ` FROM users WHERE id = $1`
 	return scanSingleUser(s.db.QueryRowContext(ctx, query, userID))
 }
 
 func (s *Server) listUsers(ctx context.Context) ([]User, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id, name, token, expires_at, remark, permissions, domains, created_at, updated_at, is_admin FROM users ORDER BY id ASC`)
+	rows, err := s.db.QueryContext(ctx, `SELECT `+userSelectColumns+` FROM users WHERE deleted_at = '' ORDER BY id ASC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var users []User
+	for rows.Next() {
+		user, err := scanUser(rows)
+		if err != nil {
+			return nil, err
+		}
+		users = append(users, user)
+	}
+	return users, rows.Err()
+}
+
+func (s *Server) listDeletedUsers(ctx context.Context) ([]User, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT `+userSelectColumns+` FROM users WHERE deleted_at <> '' ORDER BY deleted_at DESC, id DESC`)
 	if err != nil {
 		return nil, err
 	}
@@ -49,15 +74,64 @@ func (s *Server) insertUser(ctx context.Context, payload normalizedUserPayload, 
 }
 
 func (s *Server) updateUser(ctx context.Context, userID int64, payload normalizedUserPayload, existing User) error {
-	_, err := s.db.ExecContext(ctx, `
+	result, err := s.db.ExecContext(ctx, `
 		UPDATE users
 		SET name = $1, token = $2, expires_at = $3, remark = $4, permissions = $5, domains = $6, updated_at = $7
-		WHERE id = $8
+		WHERE id = $8 AND deleted_at = ''
 	`, payload.Name, payload.Token, payload.ExpiresAt, payload.Remark, strings.Join(payload.Permissions, ","), strings.Join(payload.Domains, ","), nowISO(), userID)
 	if err != nil {
 		return err
 	}
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rowsAffected == 0 {
+		return sql.ErrNoRows
+	}
 	s.tokenCache.Invalidate(existing.Token, payload.Token)
+	return nil
+}
+
+func (s *Server) softDeleteUser(ctx context.Context, user User) error {
+	ts := nowISO()
+	result, err := s.db.ExecContext(ctx, `
+		UPDATE users
+		SET deleted_at = $1, updated_at = $1
+		WHERE id = $2 AND deleted_at = ''
+	`, ts, user.ID)
+	if err != nil {
+		return err
+	}
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rowsAffected == 0 {
+		return sql.ErrNoRows
+	}
+	s.tokenCache.Invalidate(user.Token)
+	return nil
+}
+
+func (s *Server) restoreUser(ctx context.Context, user User) error {
+	ts := nowISO()
+	result, err := s.db.ExecContext(ctx, `
+		UPDATE users
+		SET deleted_at = '', updated_at = $1
+		WHERE id = $2 AND deleted_at <> ''
+	`, ts, user.ID)
+	if err != nil {
+		return err
+	}
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rowsAffected == 0 {
+		return sql.ErrNoRows
+	}
+	s.tokenCache.Invalidate(user.Token)
 	return nil
 }
 
@@ -85,6 +159,7 @@ func scanUser(sc scanner) (User, error) {
 		&user.CreatedAt,
 		&user.UpdatedAt,
 		&user.IsAdmin,
+		&user.DeletedAt,
 	)
 	return user, err
 }

@@ -32,6 +32,10 @@ func (c *TokenCache) Get(token string) (User, bool) {
 		delete(c.items, token)
 		return User{}, false
 	}
+	if strings.TrimSpace(entry.User.DeletedAt) != "" {
+		delete(c.items, token)
+		return User{}, false
+	}
 	if expiresAt, err := parseISO(entry.User.ExpiresAt); err != nil || expiresAt.Before(time.Now().UTC()) {
 		delete(c.items, token)
 		if err == nil {

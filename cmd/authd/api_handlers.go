@@ -1,6 +1,8 @@
 package main
 
 import (
+	"database/sql"
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -244,6 +246,10 @@ func (s *Server) handleAPIUsersUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.updateUser(r.Context(), userID, normalized, *user); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			writeDetailError(w, http.StatusNotFound, "user not found")
+			return
+		}
 		if isUniqueViolation(err) {
 			writeDetailError(w, http.StatusConflict, "token already exists")
 			return
@@ -285,10 +291,13 @@ func (s *Server) handleAPIUsersDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if _, err := s.db.ExecContext(r.Context(), `DELETE FROM users WHERE id = $1`, userID); err != nil {
+	if err := s.softDeleteUser(r.Context(), *user); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			writeDetailError(w, http.StatusNotFound, "user not found")
+			return
+		}
 		s.internalError(w, err)
 		return
 	}
-	s.tokenCache.Invalidate(user.Token)
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }

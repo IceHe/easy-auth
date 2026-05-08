@@ -88,9 +88,10 @@ systemctl restart wuwa-auth.service
 
 - 登录页：`GET /admin/login`
 - 管理页：`GET /admin`
+- 已删除用户页：`GET /admin/deleted-users`
 - 退出：`GET /admin/logout`
 
-管理员通过 token 登录后可新增/更新用户，也可删除非管理员账号。
+管理员通过 token 登录后可新增/更新用户，也可软删除非管理员账号，并在已删除用户页面恢复。
 
 用户列表中的编辑行为：
 - 修改 `expires_at`、备注、权限、域名范围后会自动保存。
@@ -107,6 +108,7 @@ systemctl restart wuwa-auth.service
 - `domains` 域名范围（如 `echo.icehe.life,stat.icehe.life`，`*` 表示全部域名）
 - `created_at` 创建时间
 - `updated_at` 修改时间
+- `deleted_at` 删除时间，空字符串表示未删除
 
 权限规则：
 - 拥有 `manage` 可进行后台管理和用户管理 API

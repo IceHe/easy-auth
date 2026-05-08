@@ -56,20 +56,23 @@ func renderLoginHTML(errorText string) string {
 
 func renderAdminHTML(users []User, currentUser User) string {
 	var rows strings.Builder
-	for _, user := range users {
-		permissions := strings.Split(user.Permissions, ",")
-		permissionSet := make(map[string]bool, len(permissions))
-		for _, permission := range permissions {
-			permissionSet[strings.TrimSpace(permission)] = true
-		}
-		deleteHTML := "<span>管理员账号不可删除</span>"
-		if !user.IsAdmin {
-			deleteHTML = fmt.Sprintf(`<form method="post" action="/admin/users/%d/delete" onsubmit="return confirm('确认删除该账号？');">
+	if len(users) == 0 {
+		rows.WriteString(`<tr><td colspan="9" style="text-align:center;">暂无用户</td></tr>`)
+	} else {
+		for _, user := range users {
+			permissions := strings.Split(user.Permissions, ",")
+			permissionSet := make(map[string]bool, len(permissions))
+			for _, permission := range permissions {
+				permissionSet[strings.TrimSpace(permission)] = true
+			}
+			deleteHTML := "<span>管理员账号不可删除</span>"
+			if !user.IsAdmin {
+				deleteHTML = fmt.Sprintf(`<form method="post" action="/admin/users/%d/delete" onsubmit="return confirm('确认删除该账号？删除后可在已删除用户页面恢复。');">
   <button type="submit">删除</button>
 </form>`, user.ID)
-		}
+			}
 
-		rows.WriteString(fmt.Sprintf(`
+			rows.WriteString(fmt.Sprintf(`
             <tr>
               <td class="id-col">%d</td>
               <td class="name-col">%s</td>
@@ -103,27 +106,28 @@ func renderAdminHTML(users []User, currentUser User) string {
                 </div>
               </td>
             </tr>`,
-			user.ID,
-			html.EscapeString(user.Name),
-			html.EscapeString(formatDisplayTimestamp(user.ExpiresAt)),
-			user.ID,
-			html.EscapeString(user.Remark),
-			html.EscapeString(user.Token),
-			html.EscapeString(formatDisplayTimestamp(user.CreatedAt)),
-			html.EscapeString(formatDisplayTimestamp(user.UpdatedAt)),
-			user.ID,
-			html.EscapeString(user.Domains),
-			user.ID,
-			user.ID,
-			html.EscapeString(user.Name),
-			html.EscapeString(toDateTimeLocalValue(user.ExpiresAt)),
-			html.EscapeString(user.Token),
-			checkedAttr(permissionSet["manage"]),
-			checkedAttr(permissionSet["view"]),
-			checkedAttr(permissionSet["edit"]),
-			user.ID,
-			deleteHTML,
-		))
+				user.ID,
+				html.EscapeString(user.Name),
+				html.EscapeString(formatDisplayTimestamp(user.ExpiresAt)),
+				user.ID,
+				html.EscapeString(user.Remark),
+				html.EscapeString(user.Token),
+				html.EscapeString(formatDisplayTimestamp(user.CreatedAt)),
+				html.EscapeString(formatDisplayTimestamp(user.UpdatedAt)),
+				user.ID,
+				html.EscapeString(user.Domains),
+				user.ID,
+				user.ID,
+				html.EscapeString(user.Name),
+				html.EscapeString(toDateTimeLocalValue(user.ExpiresAt)),
+				html.EscapeString(user.Token),
+				checkedAttr(permissionSet["manage"]),
+				checkedAttr(permissionSet["view"]),
+				checkedAttr(permissionSet["edit"]),
+				user.ID,
+				deleteHTML,
+			))
+		}
 	}
 
 	return fmt.Sprintf(`<!doctype html>
@@ -230,7 +234,7 @@ func renderAdminHTML(users []User, currentUser User) string {
 </head>
 <body>
   <h1>鉴权管理后台</h1>
-  <p>当前管理员: %s | <a href="/admin/logout">退出</a></p>
+  <p>当前管理员: %s | <strong>正常用户</strong> | <a href="/admin/deleted-users">已删除用户</a> | <a href="/admin/logout">退出</a></p>
 
   <h2>新增用户</h2>
   <form class="create-user-form" method="post" action="/admin/users">
@@ -379,9 +383,144 @@ func renderAdminHTML(users []User, currentUser User) string {
         });
       });
     })();
-  </script>
+	</script>
 </body>
 </html>`, html.EscapeString(currentUser.Name), html.EscapeString(toDateTimeLocalValue(generateQuickExpiresAt())), rows.String())
+}
+
+func renderDeletedUsersHTML(users []User, currentUser User) string {
+	var rows strings.Builder
+	if len(users) == 0 {
+		rows.WriteString(`<tr><td colspan="11" style="text-align:center;">暂无已删除用户</td></tr>`)
+	} else {
+		for _, user := range users {
+			permissions := html.EscapeString(strings.Join(normalizePermissions(user.Permissions), ", "))
+			domains := html.EscapeString(strings.Join(normalizeDomains(user.Domains), ", "))
+			restoreHTML := fmt.Sprintf(`<form method="post" action="/admin/users/%d/restore" onsubmit="return confirm('确认恢复该账号？');">
+  <button type="submit">恢复</button>
+</form>`, user.ID)
+
+			rows.WriteString(fmt.Sprintf(`
+            <tr>
+              <td class="id-col">%d</td>
+              <td class="name-col">%s</td>
+              <td class="time-col">%s</td>
+              <td class="remark-col">%s</td>
+              <td class="perm-col">%s</td>
+              <td class="domains-col">%s</td>
+              <td class="token-col">
+                <details>
+                  <summary>点击显示</summary>
+                  <div>%s</div>
+                </details>
+              </td>
+              <td class="time-col">%s</td>
+              <td class="time-col">%s</td>
+              <td class="time-col">%s</td>
+              <td class="ops-col">
+                %s
+              </td>
+            </tr>`,
+				user.ID,
+				html.EscapeString(user.Name),
+				html.EscapeString(formatDisplayTimestamp(user.ExpiresAt)),
+				html.EscapeString(user.Remark),
+				permissions,
+				domains,
+				html.EscapeString(user.Token),
+				html.EscapeString(formatDisplayTimestamp(user.CreatedAt)),
+				html.EscapeString(formatDisplayTimestamp(user.UpdatedAt)),
+				html.EscapeString(formatDisplayTimestamp(user.DeletedAt)),
+				restoreHTML,
+			))
+		}
+	}
+
+	return fmt.Sprintf(`<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="alternate icon" type="image/x-icon" href="/favicon.ico">
+  <title>已删除用户 - 鉴权管理后台</title>
+  <style>
+    body { font-family: sans-serif; margin: 24px; }
+    .nav { margin: 0 0 18px; }
+    .nav a { margin-right: 12px; }
+    .table-wrap {
+      width: 100%%;
+      overflow-x: auto;
+      --table-min-width: 1480px;
+      --id-col-width: 64px;
+      --name-col-width: 128px;
+      --time-col-width: 184px;
+      --remark-col-width: 160px;
+      --perm-col-width: 180px;
+      --domains-col-width: 220px;
+      --token-col-width: 160px;
+      --ops-col-width: 110px;
+    }
+    table { border-collapse: collapse; width: max(100%%, var(--table-min-width)); table-layout: fixed; }
+    table, th, td { border: 1px solid #aaa; }
+    th, td {
+      padding: 10px 8px;
+      text-align: left;
+      white-space: normal;
+      word-break: break-word;
+      overflow-wrap: anywhere;
+      vertical-align: top;
+      line-height: 1.5;
+      min-width: 0;
+    }
+    tr { min-height: 72px; }
+    .id-col { width: var(--id-col-width); }
+    .name-col { width: var(--name-col-width); }
+    .time-col { width: var(--time-col-width); }
+    .remark-col { width: var(--remark-col-width); }
+    .perm-col { width: var(--perm-col-width); }
+    .domains-col { width: var(--domains-col-width); }
+    .token-col { width: var(--token-col-width); }
+    .ops-col { width: var(--ops-col-width); }
+    .token-col details,
+    .token-col summary,
+    .token-col div { min-width: 0; }
+    @media (max-width: 960px) {
+      body { margin: 16px; }
+      th, td { padding: 8px 6px; }
+      .table-wrap {
+        --table-min-width: 1400px;
+        --id-col-width: 56px;
+        --name-col-width: 112px;
+        --time-col-width: 168px;
+        --remark-col-width: 144px;
+        --perm-col-width: 160px;
+        --domains-col-width: 200px;
+        --token-col-width: 144px;
+        --ops-col-width: 100px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <h1>已删除用户</h1>
+  <p>当前管理员: %s | <a href="/admin">正常用户</a> | <strong>已删除用户</strong> | <a href="/admin/logout">退出</a></p>
+  <p>这里仅展示软删除用户，可从此页恢复回正常列表。</p>
+
+  <div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th class="id-col">ID</th><th class="name-col">名称</th><th class="time-col">期限</th><th class="remark-col">备注</th><th class="perm-col">权限</th><th class="domains-col">域名范围</th><th class="token-col">Token</th><th class="time-col">创建时间</th><th class="time-col">修改时间</th><th class="time-col">删除时间</th><th class="ops-col">操作</th>
+      </tr>
+    </thead>
+    <tbody>
+      %s
+    </tbody>
+  </table>
+  </div>
+</body>
+</html>`, html.EscapeString(currentUser.Name), rows.String())
 }
 
 func checkedAttr(checked bool) string {

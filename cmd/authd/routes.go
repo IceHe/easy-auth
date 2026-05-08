@@ -26,12 +26,14 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("GET /admin/login", s.handleAdminLoginPage)
 	mux.HandleFunc("POST /admin/login", s.handleAdminLoginSubmit)
 	mux.HandleFunc("GET /admin/logout", s.handleAdminLogout)
+	mux.HandleFunc("GET /admin/deleted-users", s.handleAdminDeletedUsers)
 	mux.HandleFunc("GET /admin", s.handleAdminHome)
 	mux.HandleFunc("GET /admin/", s.handleAdminHome)
 	mux.HandleFunc("POST /admin/users", s.handleAdminUsersCreate)
 	mux.HandleFunc("POST /admin/users/{userID}", s.handleAdminUsersUpdate)
 	mux.HandleFunc("POST /admin/users/{userID}/autosave", s.handleAdminUsersAutosave)
 	mux.HandleFunc("POST /admin/users/{userID}/delete", s.handleAdminUsersDelete)
+	mux.HandleFunc("POST /admin/users/{userID}/restore", s.handleAdminUsersRestore)
 
 	return loggingMiddleware(mux)
 }
